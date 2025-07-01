@@ -12,11 +12,16 @@ logger = logging.getLogger(__name__)
 class GeminiClient:
     def __init__(self):
         try:
-            self.api_key = os.environ.get("GEMINI_API_KEY")
-            if not self.api_key:
+            # Initialize Google Gemini Client
+            self.gemini_api_key = os.environ.get("GEMINI_API_KEY")
+            if not self.gemini_api_key:
                 raise ValueError("GEMINI_API_KEY environment variable not set.")
-            genai.configure(api_key=self.api_key)
+            genai.configure(api_key=self.gemini_api_key)
             self.model = genai.GenerativeModel('gemini-1.5-flash')
+
+            # Initialize Tavily Search Client for live web searches
+            self.tavily_api_key = os.environ.get("TAVILY_API_KEY")
+
         except AttributeError:
             logger.error("Failed to initialize GeminiClient. Your google-generativeai library is likely outdated.")
             raise
@@ -26,14 +31,13 @@ class GeminiClient:
 
     async def _search_with_tavily(self, query: str):
         """Perform a web search using the Tavily Search API."""
-        tavily_api_key = os.environ.get("TAVILY_API_KEY")
-        if not tavily_api_key:
+        if not self.tavily_api_key:
             logger.warning("TAVILY_API_KEY not set. Live search is disabled.")
             return "Live search is not configured."
 
         try:
             response = requests.post("https://api.tavily.com/search", json={
-                "api_key": tavily_api_key,
+                "api_key": self.tavily_api_key,
                 "query": query,
                 "search_depth": "basic",
                 "include_answer": True,
@@ -56,7 +60,7 @@ class GeminiClient:
         return any(indicator in question.lower() for indicator in current_indicators)
 
     async def generate_response(self, question: str, replied_content: str = None, chat_id: int = None):
-        """Generate AI response with a compatible prompt structure."""
+        """Generate AI response with the correct modern prompt structure."""
         try:
             system_prompt = """You are me - respond as if YOU are the actual person whose Telegram account this is.
 
@@ -93,38 +97,22 @@ NEVER:
             final_user_prompt = "\n\n".join(user_prompt_parts)
 
             # --- MODIFICATION START ---
-            # For older library versions, the system prompt must be part of the main contents list.
-            request_contents = [
-                {
-                    "role": "system",
-                    "parts": [system_prompt]
-                },
-                {
-                    "role": "user",
-                    "parts": [final_user_prompt]
-                }
-            ]
-
-            # The generate_content call no longer has the system_instruction argument.
+            # This is the modern and correct way to send the request.
+            # The system prompt is passed as its own dedicated argument.
             response = self.model.generate_content(
-                contents=request_contents
+                contents=[final_user_prompt],
+                system_instruction=system_prompt
             )
             # --- MODIFICATION END ---
             
-            # The .text attribute may not exist on older response objects.
-            # We access the text more safely.
-            response_text = ""
-            if response.parts:
-                response_text = response.parts[0].text
-
-            return response_text or "hmm, something went wrong there. try again?"
+            return response.text or "hmm, something went wrong there. try again?"
 
         except Exception as e:
             logger.error(f"Gemini API error: {e}", exc_info=True)
             return "having some trouble right now, try again in a moment"
 
-    # Other functions...
-    
+    # The rest of the file remains the same...
+
     async def _get_recent_context(self, chat_id: int, limit: int = 5):
         """Get recent chat context from the database."""
         if not chat_id:
