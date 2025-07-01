@@ -105,10 +105,12 @@ def start_userbot_endpoint():
         
         # Start userbot service in background
         try:
+            # Use current working directory for deployment compatibility
+            current_dir = os.path.dirname(os.path.abspath(__file__))
             process = subprocess.Popen([
                 sys.executable, 'userbot_service.py'
             ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
-               cwd='/home/runner/workspace', 
+               cwd=current_dir, 
                preexec_fn=os.setsid if hasattr(os, 'setsid') else None)
             
             return jsonify({
