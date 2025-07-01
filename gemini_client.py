@@ -1,7 +1,7 @@
 import os
 import logging
 from google import genai
-from google.generativeai import types
+from google.genai import types
 from app import app, db  # <-- FIX: Imported the 'db' object
 from models import ChatHistory
 
