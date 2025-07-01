@@ -69,21 +69,29 @@ def status():
                 "powered_by": "Envologia"
             })
         
-        # All credentials available - userbot can be started
-        global userbot_manager
-        if userbot_manager and hasattr(userbot_manager, 'is_running'):
+        # All credentials available - check userbot status
+        global userbot_manager, userbot_thread
+        
+        if userbot_manager and hasattr(userbot_manager, 'is_running') and userbot_manager.is_running:
             return jsonify({
-                "status": "running" if userbot_manager.is_running else "ready",
+                "status": "running",
                 "bot_name": "Envo AI Userbot", 
                 "powered_by": "Envologia",
-                "message": "All credentials configured. Userbot ready to start."
+                "message": "Userbot is running! Commands are active in Telegram."
+            })
+        elif userbot_thread and userbot_thread.is_alive():
+            return jsonify({
+                "status": "starting",
+                "bot_name": "Envo AI Userbot",
+                "powered_by": "Envologia", 
+                "message": "Userbot is starting up..."
             })
         else:
             return jsonify({
                 "status": "ready",
                 "bot_name": "Envo AI Userbot",
                 "powered_by": "Envologia", 
-                "message": "All credentials configured. Use standalone userbot service to start."
+                "message": "All credentials configured. Ready to start userbot."
             })
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)})
@@ -92,34 +100,46 @@ def status():
 def start_userbot_endpoint():
     """Start the userbot on demand"""
     try:
-        import subprocess
-        import sys
+        global userbot_manager, userbot_thread
         
-        # Check if userbot process is already running
-        try:
-            result = subprocess.run(['pgrep', '-f', 'userbot_service'], capture_output=True, text=True)
-            if result.returncode == 0 and result.stdout.strip():
-                return jsonify({"status": "already_running", "message": "Userbot is already active"})
-        except:
-            pass
+        # Check if userbot is already running
+        if userbot_manager and hasattr(userbot_manager, 'is_running') and userbot_manager.is_running:
+            return jsonify({"status": "already_running", "message": "Userbot is already active"})
         
-        # Start userbot service in background
-        try:
-            # Use current working directory for deployment compatibility
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            process = subprocess.Popen([
-                sys.executable, 'userbot_service.py'
-            ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
-               cwd=current_dir, 
-               preexec_fn=os.setsid if hasattr(os, 'setsid') else None)
-            
-            return jsonify({
-                "status": "started", 
-                "message": "Userbot started successfully! You can now use commands in Telegram.",
-                "pid": process.pid
-            })
-        except Exception as e:
-            return jsonify({"status": "error", "error": f"Failed to start userbot process: {str(e)}"})
+        # Check if thread is already running
+        if userbot_thread and userbot_thread.is_alive():
+            return jsonify({"status": "already_running", "message": "Userbot thread is already active"})
+        
+        # Start userbot in a new thread
+        def start_userbot_async():
+            try:
+                import asyncio
+                from userbot import UserbotManager
+                
+                # Create new event loop for this thread
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                global userbot_manager
+                userbot_manager = UserbotManager()
+                
+                # Run the userbot
+                loop.run_until_complete(userbot_manager.start())
+                
+            except Exception as e:
+                logger.error(f"Userbot thread error: {e}")
+        
+        # Start userbot thread
+        userbot_thread = threading.Thread(target=start_userbot_async, daemon=True)
+        userbot_thread.start()
+        
+        # Give it a moment to initialize
+        time.sleep(2)
+        
+        return jsonify({
+            "status": "started", 
+            "message": "Userbot started successfully! You can now use commands in Telegram."
+        })
             
     except Exception as e:
         logger.error(f"Failed to start userbot via endpoint: {e}")
