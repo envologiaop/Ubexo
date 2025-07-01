@@ -1,12 +1,13 @@
 import os
 import asyncio
 import logging
+from datetime import datetime
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from app import app, db
-from models import ChatHistory, UserContext
+from models import ChatHistory
 from gemini_client import GeminiClient
-from utils import transcribe_voice, analyze_image, get_chat_context, format_error_message
+from utils import transcribe_voice, analyze_image, format_error_message
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -28,11 +29,11 @@ class UserbotManager:
 
     def register_handlers(self):
         """Register message handlers"""
-        # --- CHANGE 1: The command handler now listens for ".envo" ---
         @self.client.on_message(filters.me & filters.command("envo", prefixes="."))
         async def handle_ask_command(client, message: Message):
             await self.process_ask_command(message)
 
+        # --- Content Creation & Editing Handlers ---
         @self.client.on_message(filters.me & filters.command("summarize", prefixes="."))
         async def handle_summarize_command(client, message: Message):
             await self.process_content_command(message, "summarize")
@@ -41,8 +42,32 @@ class UserbotManager:
         async def handle_translate_command(client, message: Message):
             await self.process_content_command(message, "translate")
 
-        # ... (all other handlers remain the same) ...
+        @self.client.on_message(filters.me & filters.command("rewrite", prefixes="."))
+        async def handle_rewrite_command(client, message: Message):
+            await self.process_content_command(message, "rewrite")
 
+        @self.client.on_message(filters.me & filters.command("improve", prefixes="."))
+        async def handle_improve_command(client, message: Message):
+            await self.process_content_command(message, "improve")
+
+        @self.client.on_message(filters.me & filters.command("expand", prefixes="."))
+        async def handle_expand_command(client, message: Message):
+            await self.process_content_command(message, "expand")
+
+        @self.client.on_message(filters.me & filters.command("condense", prefixes="."))
+        async def handle_condense_command(client, message: Message):
+            await self.process_content_command(message, "condense")
+
+        # --- Analysis & Search Handlers ---
+        @self.client.on_message(filters.me & filters.command("analyze", prefixes="."))
+        async def handle_analyze_command(client, message: Message):
+            await self.process_analysis_command(message, "analyze")
+
+        @self.client.on_message(filters.me & filters.command("explain", prefixes="."))
+        async def handle_explain_command(client, message: Message):
+            await self.process_analysis_command(message, "explain")
+
+        # --- Utility Handlers ---
         @self.client.on_message(filters.me & filters.command("help", prefixes="."))
         async def handle_help_command(client, message: Message):
             await self.process_help_command(message)
@@ -70,10 +95,8 @@ class UserbotManager:
     async def process_ask_command(self, message: Message):
         """Process .envo command, prioritizing replied-to content."""
         try:
-            # --- CHANGE 2: The question is extracted by removing ".envo" ---
             question = (message.text or "").replace(".envo", "").strip()
 
-            # Get replied content first, as the primary subject
             replied_content = None
             if message.reply_to_message:
                 reply_msg = message.reply_to_message
@@ -99,25 +122,60 @@ class UserbotManager:
             if not question and replied_content:
                 question = "What do you think about this?"
 
+            # --- FIX: Changed 'replied_content' to 'context' ---
             response = await self.gemini.generate_response(
                 question=question,
-                replied_content=replied_content,
+                context=replied_content,
                 chat_id=message.chat.id
             )
 
-            await self.client.send_message(message.chat.id, response)
-            await message.delete()
+            await message.edit_text(response)
         except Exception as e:
             error_msg = format_error_message("AI_ERROR", str(e))
             await self.client.send_message(message.chat.id, error_msg)
             await message.delete()
-            logger.error(f"Error in envo command: {e}")
-    
-    # ... (process_content_command, process_analysis_command, etc. remain the same) ...
+            logger.error(f"Error in envo command: {e}", exc_info=True)
 
+    async def process_content_command(self, message: Message, command_type: str):
+        """Handle content creation and editing commands."""
+        try:
+            content = await self.get_target_content(message)
+            if not content:
+                await message.edit_text(f"Please provide text to `{command_type}` or reply to a message.")
+                await asyncio.sleep(3)
+                await message.delete()
+                return
+
+            await message.edit_text(f"✍️ *Processing with Envo...*")
+            response = await self.gemini.process_content(content, command_type)
+            await message.edit_text(response)
+        except Exception as e:
+            error_msg = format_error_message("CONTENT_ERROR", str(e))
+            await self.client.send_message(message.chat.id, error_msg)
+            await message.delete()
+            logger.error(f"Error in {command_type} command: {e}", exc_info=True)
+
+    async def process_analysis_command(self, message: Message, command_type: str):
+        """Handle content analysis commands."""
+        try:
+            content = await self.get_target_content(message)
+            if not content:
+                await message.edit_text(f"Please provide text to `{command_type}` or reply to a message.")
+                await asyncio.sleep(3)
+                await message.delete()
+                return
+
+            await message.edit_text(f"🔬 *Analyzing with Envo...*")
+            response = await self.gemini.analyze_content(content, command_type)
+            await message.edit_text(response)
+        except Exception as e:
+            error_msg = format_error_message("ANALYSIS_ERROR", str(e))
+            await self.client.send_message(message.chat.id, error_msg)
+            await message.delete()
+            logger.error(f"Error in {command_type} command: {e}", exc_info=True)
+    
     async def process_help_command(self, message: Message):
         """Show help information as a new message."""
-        # --- CHANGE 3: The help text now shows ".envo" ---
         help_text = """**Envo AI Userbot Commands:**
 
 **AI & Questions:**
@@ -150,18 +208,18 @@ class UserbotManager:
 ✨ *Powered by Envologia*"""
         
         try:
-            await self.client.send_message(message.chat.id, help_text)
+            # Send help as a new message and delete the command
+            await self.client.send_message(message.chat.id, help_text, disable_web_page_preview=True)
             await message.delete()
         except Exception as e:
             logger.error(f"Failed to send help message: {e}")
-            await self.client.send_message(message.chat.id, "Sorry, couldn't fetch the help menu right now.")
+            await message.edit_text("Sorry, couldn't fetch the help menu right now.")
+            await asyncio.sleep(3)
             await message.delete()
-            
-    # ... (all other process methods and utility methods remain the same) ...
 
     async def get_target_content(self, message: Message):
         """Get content to process from command or reply"""
-        command_parts = message.text.split(" ", 1)
+        command_parts = (message.text or "").split(" ", 1)
         if len(command_parts) > 1 and command_parts[1].strip():
             return command_parts[1].strip()
         
@@ -175,6 +233,7 @@ class UserbotManager:
         if message.text and message.text.startswith('.'):
             return
         try:
+            # Use app_context to interact with the database
             with app.app_context():
                 chat_history = ChatHistory(
                     chat_id=message.chat.id,
