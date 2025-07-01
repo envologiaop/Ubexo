@@ -2,244 +2,165 @@ import os
 import logging
 import asyncio
 import requests
-import json
-from datetime import datetime
 from urllib.parse import quote
 from google import genai
 from google.genai import types
 from app import app
-from models import ChatHistory, UserContext
+from models import ChatHistory
 
 logger = logging.getLogger(__name__)
 
 class GeminiClient:
     def __init__(self):
-        self.client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
-        self.model = "gemini-2.5-flash"
-    
-    async def search_current_info(self, query: str):
-        """Search for current information using multiple methods"""
-        try:
-            # Try DuckDuckGo instant search first
-            search_results = []
-            
-            # Method 1: DuckDuckGo API
-            try:
-                url = "https://api.duckduckgo.com/"
-                params = {
-                    'q': query,
-                    'format': 'json',
-                    'pretty': '1',
-                    'no_redirect': '1'
-                }
-                
-                response = requests.get(url, params=params, timeout=10)
-                if response.status_code == 200:
-                    data = response.json()
-                    
-                    # Extract relevant information
-                    if data.get('Abstract'):
-                        search_results.append(f"Summary: {data['Abstract']}")
-                    
-                    if data.get('RelatedTopics'):
-                        for topic in data['RelatedTopics'][:3]:
-                            if isinstance(topic, dict) and topic.get('Text'):
-                                search_results.append(f"Info: {topic['Text']}")
-                    
-                    if data.get('Answer'):
-                        search_results.append(f"Answer: {data['Answer']}")
-                        
-            except Exception as e:
-                logger.error(f"DuckDuckGo search error: {e}")
-            
-            # Method 2: For lyrics specifically, try a different approach
-            if 'lyrics' in query.lower() or 'song' in query.lower():
-                try:
-                    # Search for lyrics using a simple web search approach
-                    headers = {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                    }
-                    
-                    # Use Google search fallback for lyrics
-                    google_query = f"{query} lyrics site:genius.com OR site:azlyrics.com"
-                    google_url = f"https://www.google.com/search?q={quote(google_query)}"
-                    
-                    # Note: This is a fallback method - actual implementation would need proper lyrics API
-                    search_results.append(f"Searching for: {query} - Try checking Genius.com or AZLyrics for latest lyrics")
-                    
-                except Exception as e:
-                    logger.error(f"Lyrics search error: {e}")
-            
-            return "\n".join(search_results) if search_results else None
-                
-        except Exception as e:
-            logger.error(f"Search error: {e}")
-            return None
-    
-    def needs_current_info(self, question: str):
-        """Check if question needs current/recent information"""
-        current_indicators = [
-            'latest', 'new', 'recent', 'current', 'today', 'now', 'this year', 
-            '2024', '2025', 'just released', 'trending', 'breaking', 'updated',
-            'lyrics', 'song', 'music', 'album', 'artist', 'news', 'score', 'price'
-        ]
-        
-        question_lower = question.lower()
-        return any(indicator in question_lower for indicator in current_indicators)
-    
+        # Fallback to a placeholder if the key is missing, to avoid crashing.
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            logger.warning("GEMINI_API_KEY is not set. GeminiClient will not function.")
+            self.client = None
+        else:
+            self.client = genai.Client(api_key=api_key)
+        self.model = "gemini-1.5-flash"  # Updated to a more recent model
+
     async def generate_response(self, question: str, context: str = None, chat_id: int = None):
         """Generate AI response with context and current information"""
+        if not self.client:
+            return "AI client is not configured. Missing GEMINI_API_KEY."
+        
         try:
-            # Check if we need current information
-            search_results = None
-            if self.needs_current_info(question):
-                search_results = await self.search_current_info(question)
-            
-            # Build the prompt to act like the user personally
-            system_prompt = """You are Envo, a knowledgeable and reliable AI partner.
+            # --- System Prompt ---
+            system_prompt = """You are Envo, a helpful AI partner integrated directly into a Telegram account. Your purpose is to assist the user seamlessly.
 
-CORE DIRECTIVES:
-- Your primary purpose is to act as a supportive partner, helping the user by answering questions accurately and clearly.
-- Your tone should be helpful, encouraging, and collaborative.
-
-IDENTITY & BOUNDARIES:
-- You are an AI, but you don't need to constantly announce it. Your goal is to be a seamless partner. Be honest about your capabilities if asked directly.
-- You don't have personal feelings or opinions, but you can help the user explore topics by providing balanced perspectives.
-- If you don't know something, state it clearly and concisely.
-
-INTERACTION STYLE:
-- **Prioritize brevity. Your answers must be as short and to-the-point as possible without sacrificing accuracy.**
-- Get straight to the answer. Avoid filler or unnecessary conversational fluff.
-- Adapt to the user's needs, whether they need a quick fact or a brief explanation.
+**Core Directives:**
+- **Act like the user:** Your responses should sound like they are coming from the user themselves—natural, direct, and in the first person. Avoid phrases like "As an AI..." or "I can help with that."
+- **Be concise:** Get straight to the point. Provide accurate answers without unnecessary conversational fluff. Brevity is key.
+- **Integrate context:** Use any provided chat history or replied-to content to inform your response.
+- **Handle unknowns:** If you don't know an answer, just say so clearly and simply.
 """
-            # Prepare the prompt
-            user_prompt = question
-            if context:
-                user_prompt = f"Context: {context}\n\nQuestion/Request: {question}"
+            # --- Build the User Prompt ---
+            user_prompt_parts = []
             
-            # Add search results if we found current info
-            if search_results:
-                user_prompt = f"Current/Updated Information: {search_results}\n\n{user_prompt}\n\nUse the current information to give an up-to-date response."
-            
-            # Get chat history for additional context
+            # 1. Add chat history for conversational context
             if chat_id:
                 chat_context = await self.get_recent_context(chat_id)
                 if chat_context:
-                    user_prompt = f"Recent chat context: {chat_context}\n\n{user_prompt}"
+                    user_prompt_parts.append(f"Here's the recent chat history for context:\n---\n{chat_context}\n---")
+
+            # 2. Add the replied-to message or analyzed content
+            if context:
+                user_prompt_parts.append(f"I'm looking at this content:\n---\n{context}\n---")
+
+            # 3. Add the user's specific question or request
+            user_prompt_parts.append(f"My question is: {question}")
             
-            response = self.client.models.generate_content(
+            user_prompt = "\n\n".join(user_prompt_parts)
+            
+            # --- Generate Content ---
+            response = self.client.generate_content(
                 model=self.model,
-                contents=[
-                    types.Content(role="user", parts=[types.Part(text=user_prompt)])
-                ],
-                config=types.GenerateContentConfig(
-                    system_instruction=system_prompt,
+                system_instruction=system_prompt,
+                contents=[user_prompt],
+                generation_config=genai.types.GenerationConfig(
                     temperature=0.7,
                     max_output_tokens=2048
                 )
             )
             
-            return response.text or "hmm, something went wrong there. try again?"
+            return response.text.strip() or "I'm not sure how to respond to that. Try rephrasing?"
             
         except Exception as e:
-            logger.error(f"Gemini API error: {e}")
-            return "having some trouble right now, try again in a moment"
-    
+            logger.error(f"Gemini API error in generate_response: {e}", exc_info=True)
+            return "Sorry, I'm having trouble connecting to my brain right now. Please try again in a moment."
+
     async def process_content(self, content: str, command_type: str):
-        """Process content based on command type"""
+        """Process content based on a specific command (summarize, translate, etc.)."""
+        if not self.client:
+            return "AI client is not configured."
+            
         try:
-            # Natural, personal prompts that sound like you're doing the task yourself
+            # Prompts designed to sound like a person's internal thought process before writing
             prompts = {
-                "summarize": f"Here's a summary of this:\n\n{content}\n\nSummarize this naturally like you're explaining it to someone.",
-                "translate": f"Let me translate this for you:\n\n{content}\n\nTranslate this naturally, as if you speak both languages fluently.",
-                "rewrite": f"I'll rewrite this in a different way:\n\n{content}\n\nRewrite this with your own personal style and voice.",
-                "improve": f"Here's the content I want to improve:\n\n{content}\n\nMake this better - fix grammar, improve flow, make it sound more natural.",
-                "expand": f"I want to add more detail to this:\n\n{content}\n\nExpand on this with more information and examples, like you really know the topic.",
-                "condense": f"This is too long, let me shorten it:\n\n{content}\n\nMake this more concise but keep all the important stuff."
+                "summarize": f"Summarize the following text concisely:\n\n---\n{content}\n---",
+                "translate": f"Translate the following text. If no target language is specified, assume English:\n\n---\n{content}\n---",
+                "rewrite": f"Rewrite the following text with a different tone or style:\n\n---\n{content}\n---",
+                "improve": f"Improve the following text by fixing grammar, spelling, and clarity:\n\n---\n{content}\n---",
+                "expand": f"Expand on the following text, adding more detail and explanation:\n\n---\n{content}\n---",
+                "condense": f"Condense the following text, making it more direct and brief:\n\n---\n{content}\n---"
             }
+            prompt = prompts.get(command_type, f"Process the following text:\n\n{content}")
             
-            prompt = prompts.get(command_type, f"Please process the following content:\n\n{content}")
+            # System prompt to ensure the output is just the processed text
+            system_prompt = "You are a text processing tool. The user will provide text and a command. Your only output should be the resulting text after applying the command. Do not add any conversational filler, commentary, or explanations."
             
-            # Use the same natural personality for content processing
-            natural_system = """Respond as the actual person whose account this is. Be natural, casual, and human-like. Don't sound like an AI or assistant - just like someone who's good at the task and doing it personally."""
-            
-            response = self.client.models.generate_content(
+            response = self.client.generate_content(
                 model=self.model,
-                contents=[
-                    types.Content(role="user", parts=[types.Part(text=prompt)])
-                ],
-                config=types.GenerateContentConfig(
-                    system_instruction=natural_system,
-                    temperature=0.6,
-                    max_output_tokens=1024
+                system_instruction=system_prompt,
+                contents=[prompt],
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.5,
+                    max_output_tokens=2048
                 )
             )
-            
-            return response.text or "couldn't process that, try again"
-            
+            return response.text.strip() or "Couldn't process that, please try again."
         except Exception as e:
-            logger.error(f"Content processing error: {e}")
-            return f"something's not working right: {str(e)}"
-    
+            logger.error(f"Content processing error for '{command_type}': {e}", exc_info=True)
+            return f"An error occurred while trying to {command_type} the content."
+
     async def analyze_content(self, content: str, command_type: str):
-        """Analyze content based on command type"""
+        """Analyze or explain content."""
+        if not self.client:
+            return "AI client is not configured."
+        
         try:
             prompts = {
-                "analyze": f"Let me break this down for you:\n\n{content}\n\nAnalyze this naturally - what are the key points, themes, and what do you think about it?",
-                "explain": f"I'll explain this:\n\n{content}\n\nExplain this like you're talking to a friend who needs to understand it."
+                "analyze": f"Analyze the key points, themes, and sentiment of the following text:\n\n---\n{content}\n---",
+                "explain": f"Explain the following topic in simple, easy-to-understand terms:\n\n---\n{content}\n---"
             }
+            prompt = prompts.get(command_type, f"Analyze this:\n\n{content}")
             
-            prompt = prompts.get(command_type, f"Here's what I'm looking at:\n\n{content}\n\nTell me what you think about this.")
-            
-            # Same natural personality system
-            natural_system = """You are the actual person whose account this is. Give your genuine thoughts and analysis in a casual, conversational way. Be insightful but natural - like you're sharing your perspective with a friend."""
-            
-            response = self.client.models.generate_content(
+            # System prompt for a natural, first-person analysis
+            system_prompt = "You are acting as the user's AI partner. Your response should be a direct, first-person analysis or explanation of the provided text, as if you were sharing your own thoughts on it."
+
+            response = self.client.generate_content(
                 model=self.model,
-                contents=[
-                    types.Content(role="user", parts=[types.Part(text=prompt)])
-                ],
-                config=types.GenerateContentConfig(
-                    system_instruction=natural_system,
-                    temperature=0.4,
-                    max_output_tokens=1536
+                system_instruction=system_prompt,
+                contents=[prompt],
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.6,
+                    max_output_tokens=2048
                 )
             )
-            
-            return response.text or "couldn't analyze that properly, try again"
-            
+            return response.text.strip() or "Couldn't analyze that properly, try again."
         except Exception as e:
-            logger.error(f"Content analysis error: {e}")
-            return f"analysis failed: {str(e)}"
-    
+            logger.error(f"Content analysis error for '{command_type}': {e}", exc_info=True)
+            return f"An error occurred during the analysis."
+
     async def analyze_image(self, image_path: str):
-        """Analyze image with OCR and description"""
+        """Analyze an image using the multimodal model."""
+        if not self.client:
+            return "AI client is not configured."
+        
         try:
-            with open(image_path, "rb") as f:
-                image_bytes = f.read()
-                
-            response = self.client.models.generate_content(
-                model="gemini-2.5-pro",  # Use pro model for image analysis
-                contents=[
-                    types.Part.from_bytes(
-                        data=image_bytes,
-                        mime_type="image/jpeg"
-                    ),
-                    "Please analyze this image in detail. Describe what you see, extract any text (OCR), identify objects, people, scenes, and provide relevant context or insights."
-                ]
+            image_part = types.Part.from_uri(
+                mime_type="image/jpeg",  # Assuming jpeg, but could be dynamic
+                uri=image_path
             )
+            prompt = "Describe this image in detail. If there is any text, extract it."
             
-            return response.text or "Could not analyze the image."
+            # Using a model that supports vision
+            vision_model = self.client.get_generative_model(model_name="gemini-1.5-pro")
+            response = vision_model.generate_content([prompt, image_part])
             
+            return response.text.strip() or "Could not analyze the image."
         except Exception as e:
-            logger.error(f"Image analysis error: {e}")
-            return f"Error analyzing image: {str(e)}"
-    
-    async def get_recent_context(self, chat_id: int, limit: int = 5):
-        """Get recent chat context for better responses"""
+            logger.error(f"Image analysis error: {e}", exc_info=True)
+            return "Failed to analyze the image."
+
+    async def get_recent_context(self, chat_id: int, limit: int = 7):
+        """Get recent chat context for better conversational responses."""
         try:
+            # Use app_context to ensure the database session is available
             with app.app_context():
-                recent_messages = ChatHistory.query.filter_by(chat_id=chat_id).order_by(
+                recent_messages = db.session.query(ChatHistory).filter_by(chat_id=chat_id).order_by(
                     ChatHistory.timestamp.desc()
                 ).limit(limit).all()
                 
@@ -247,13 +168,13 @@ INTERACTION STYLE:
                     return None
                 
                 context_parts = []
-                for msg in reversed(recent_messages):  # Reverse to get chronological order
+                # Reverse to get chronological order for the prompt
+                for msg in reversed(recent_messages):
                     if msg.message_text:
-                        user_info = msg.first_name or msg.username or "User"
+                        user_info = msg.first_name or msg.username or f"User_{msg.user_id}"
                         context_parts.append(f"{user_info}: {msg.message_text}")
                 
                 return "\n".join(context_parts) if context_parts else None
-                
         except Exception as e:
-            logger.error(f"Context retrieval error: {e}")
+            logger.error(f"Context retrieval error: {e}", exc_info=True)
             return None
