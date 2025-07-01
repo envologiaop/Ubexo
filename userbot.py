@@ -22,6 +22,18 @@ class UserbotManager:
         self.is_running = False
         self.gemini = GeminiClient()
         
+    async def stop(self):
+        """Gracefully stop the userbot"""
+        try:
+            logger.info("Stopping userbot...")
+            self.is_running = False
+            
+            if self.client and hasattr(self.client, 'is_connected') and self.client.is_connected:
+                await self.client.stop()
+                logger.info("Userbot stopped successfully")
+        except Exception as e:
+            logger.error(f"Error stopping userbot: {e}")
+        
     async def initialize_client(self):
         """Initialize Pyrogram client"""
         session_string = os.environ.get("TELEGRAM_SESSION_STRING")
@@ -103,41 +115,76 @@ class UserbotManager:
             await self.store_chat_history(message)
 
     async def start(self):
-        """Start the userbot"""
-        try:
-            logger.info("Initializing Telegram userbot...")
-            await self.initialize_client()
-            
-            logger.info("Starting Telegram client...")
-            await self.client.start()
-            
-            self.is_running = True
-            logger.info("✅ Envo userbot started successfully! Ready to respond in Telegram.")
-            
-            # Keep the client running
+        """Start the userbot with comprehensive error handling"""
+        startup_attempts = 0
+        max_startup_attempts = 3
+        
+        while startup_attempts < max_startup_attempts:
             try:
-                await self.client.idle()
-            except AttributeError:
-                # For older Pyrogram versions, use run_until_disconnected
-                import signal
-                import asyncio
-                logger.info("Using alternative keep-alive method...")
+                startup_attempts += 1
+                logger.info(f"Initializing Telegram userbot (attempt {startup_attempts}/{max_startup_attempts})...")
                 
-                def signal_handler(signum, frame):
-                    logger.info("Received shutdown signal")
-                    self.client.stop()
+                await self.initialize_client()
                 
-                signal.signal(signal.SIGINT, signal_handler)
-                signal.signal(signal.SIGTERM, signal_handler)
+                logger.info("Starting Telegram client...")
+                await self.client.start()
                 
-                # Keep running until manually stopped
-                while self.is_running:
-                    await asyncio.sleep(1)
+                self.is_running = True
+                logger.info("✅ Envo userbot started successfully! Ready to respond in Telegram.")
+                
+                # Keep the client running with improved handling
+                try:
+                    # Try the standard idle method first
+                    await self.client.idle()
+                except (AttributeError, NotImplementedError, RuntimeError) as e:
+                    logger.info(f"Standard idle not available ({e}), using custom keep-alive...")
+                    
+                    # Custom keep-alive loop for deployment environments
+                    try:
+                        while self.is_running:
+                            # Check if client is still connected
+                            if hasattr(self.client, 'is_connected') and not self.client.is_connected:
+                                logger.warning("Client disconnected, attempting reconnect...")
+                                try:
+                                    await self.client.start()
+                                except Exception as reconnect_error:
+                                    logger.error(f"Reconnection failed: {reconnect_error}")
+                                    break
+                            
+                            # Sleep with cancellation support
+                            await asyncio.sleep(5)
+                            
+                    except asyncio.CancelledError:
+                        logger.info("Userbot keep-alive cancelled")
+                        break
+                    except Exception as keep_alive_error:
+                        logger.error(f"Keep-alive error: {keep_alive_error}")
+                        break
+                
+                # If we reach here, userbot stopped normally
+                break
+                
+            except Exception as e:
+                logger.error(f"Failed to start userbot (attempt {startup_attempts}): {e}")
+                self.is_running = False
+                
+                if startup_attempts >= max_startup_attempts:
+                    logger.error("Max startup attempts reached, giving up")
+                    raise
+                else:
+                    logger.info(f"Retrying in 5 seconds...")
+                    await asyncio.sleep(5)
             
-        except Exception as e:
-            logger.error(f"Failed to start userbot: {e}")
-            self.is_running = False
-            raise
+            finally:
+                # Ensure proper cleanup
+                if hasattr(self, 'client') and self.client:
+                    try:
+                        if hasattr(self.client, 'is_connected') and self.client.is_connected:
+                            await self.client.stop()
+                    except Exception as cleanup_error:
+                        logger.error(f"Error during client cleanup: {cleanup_error}")
+                
+                self.is_running = False
             
     async def process_ask_command(self, message: Message):
         """Process .ask command with AI response"""

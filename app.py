@@ -110,7 +110,7 @@ def start_userbot_endpoint():
         if userbot_thread and userbot_thread.is_alive():
             return jsonify({"status": "already_running", "message": "Userbot thread is already active"})
         
-        # Start userbot in a new thread
+        # Start userbot in a new thread with proper event loop handling
         def start_userbot_async():
             try:
                 import asyncio
@@ -120,14 +120,36 @@ def start_userbot_endpoint():
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 
-                global userbot_manager
-                userbot_manager = UserbotManager()
-                
-                # Run the userbot
-                loop.run_until_complete(userbot_manager.start())
+                try:
+                    global userbot_manager
+                    userbot_manager = UserbotManager()
+                    
+                    # Run the userbot with proper exception handling
+                    loop.run_until_complete(userbot_manager.start())
+                except Exception as e:
+                    logger.error(f"Userbot execution error: {e}")
+                    raise
+                finally:
+                    # Properly clean up the event loop
+                    try:
+                        # Cancel all running tasks
+                        pending = asyncio.all_tasks(loop)
+                        for task in pending:
+                            task.cancel()
+                        
+                        # Wait for tasks to be cancelled
+                        if pending:
+                            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                    except Exception as cleanup_error:
+                        logger.error(f"Error during cleanup: {cleanup_error}")
+                    finally:
+                        loop.close()
                 
             except Exception as e:
                 logger.error(f"Userbot thread error: {e}")
+                # Ensure userbot_manager is marked as not running
+                if 'userbot_manager' in globals():
+                    userbot_manager.is_running = False
         
         # Start userbot thread
         userbot_thread = threading.Thread(target=start_userbot_async, daemon=True)
