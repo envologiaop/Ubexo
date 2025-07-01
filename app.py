@@ -112,23 +112,38 @@ def start_userbot_endpoint():
         
         # Start userbot in a new thread with proper event loop handling
         def start_userbot_async():
+            global userbot_manager
             try:
                 import asyncio
-                from userbot import UserbotManager
+                import sys
                 
-                # Create new event loop for this thread
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
+                # Import userbot outside of the async context to avoid sync module issues
+                try:
+                    from userbot import UserbotManager
+                except ImportError as import_error:
+                    logger.error(f"Failed to import UserbotManager: {import_error}")
+                    return
+                
+                # Create and set new event loop for this thread
+                if sys.version_info >= (3, 10):
+                    try:
+                        loop = asyncio.get_event_loop()
+                    except RuntimeError:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                else:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
                 
                 try:
-                    global userbot_manager
                     userbot_manager = UserbotManager()
                     
                     # Run the userbot with proper exception handling
                     loop.run_until_complete(userbot_manager.start())
                 except Exception as e:
                     logger.error(f"Userbot execution error: {e}")
-                    raise
+                    if userbot_manager:
+                        userbot_manager.is_running = False
                 finally:
                     # Properly clean up the event loop
                     try:
@@ -143,12 +158,15 @@ def start_userbot_endpoint():
                     except Exception as cleanup_error:
                         logger.error(f"Error during cleanup: {cleanup_error}")
                     finally:
-                        loop.close()
+                        try:
+                            loop.close()
+                        except Exception:
+                            pass
                 
             except Exception as e:
                 logger.error(f"Userbot thread error: {e}")
                 # Ensure userbot_manager is marked as not running
-                if 'userbot_manager' in globals():
+                if userbot_manager:
                     userbot_manager.is_running = False
         
         # Start userbot thread

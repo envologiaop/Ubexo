@@ -4,9 +4,16 @@ import logging
 import threading
 import time
 from datetime import datetime, timedelta
-from pyrogram import Client
-from pyrogram import filters
-from pyrogram.types import Message
+
+# Import pyrogram components carefully to avoid sync module issues
+try:
+    from pyrogram import Client
+    from pyrogram import filters
+    from pyrogram.types import Message
+except ImportError as e:
+    logging.error(f"Failed to import pyrogram: {e}")
+    raise
+
 from app import app, db
 from models import ChatHistory, UserContext, CommandQueue
 from gemini_client import GeminiClient
