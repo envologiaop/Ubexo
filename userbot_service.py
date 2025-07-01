@@ -8,7 +8,17 @@ import os
 import sys
 import asyncio
 import logging
-from userbot import UserbotManager
+from pathlib import Path
+
+# Ensure we're working in the correct directory
+os.chdir(Path(__file__).parent)
+
+try:
+    from userbot import UserbotManager
+except ImportError:
+    # Add current directory to path if import fails
+    sys.path.insert(0, str(Path(__file__).parent))
+    from userbot import UserbotManager
 
 # Set up logging
 logging.basicConfig(
