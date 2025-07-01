@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Envo AI Userbot Dashboard</title>
+    <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        .status-ready { background-color: var(--bs-success); }
+        .status-running { background-color: var(--bs-success); }
+        .status-stopped { background-color: var(--bs-danger); }
+        .status-error { background-color: var(--bs-warning); }
+        .status-missing { background-color: var(--bs-secondary); }
+        .feature-card {
+            transition: transform 0.2s;
+        }
+        .feature-card:hover {
+            transform: translateY(-2px);
+        }
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .deployment-steps {
+            background: var(--bs-dark);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 1rem 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container py-5">
+        <!-- Header -->
+        <div class="row mb-5">
+            <div class="col-12 text-center">
+                <h1 class="display-4 mb-3">
+                    <i class="fas fa-robot text-primary"></i>
+                    Envo AI Userbot
+                </h1>
+                <p class="lead text-muted">Web Service Dashboard - Ready for Deployment</p>
+            </div>
+        </div>
+
+        <!-- Status Card -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h5 class="card-title mb-1">
+                                    <i class="fas fa-heartbeat text-info"></i>
+                                    System Status
+                                </h5>
+                                <div id="status-content" class="d-flex align-items-center">
+                                    <div class="status-indicator status-ready" id="status-indicator"></div>
+                                    <span id="status-text" class="fw-bold text-success">Checking status...</span>
+                                </div>
+                                <small id="status-message" class="text-muted"></small>
+                            </div>
+                            <div class="btn-group">
+                                <button class="btn btn-outline-primary" onclick="refreshStatus()">
+                                    <i class="fas fa-sync-alt"></i>
+                                    Refresh
+                                </button>
+                                <button class="btn btn-success" onclick="startUserbot()" id="start-btn">
+                                    <i class="fas fa-play"></i>
+                                    Start Bot
+                                </button>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <small class="text-muted" id="last-updated">Last updated: Never</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Deployment Instructions -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-cloud text-primary"></i>
+                            Web Service Deployment
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="deployment-steps">
+                            <h6 class="text-warning mb-3">
+                                <i class="fas fa-info-circle"></i>
+                                Your Envo userbot is now ready for deployment as a web service!
+                            </h6>
+                            
+                            <p class="mb-3">
+                                The Flask web service is running successfully with all features configured. 
+                                This means your userbot can be deployed to any web hosting platform like Render, Railway, or Heroku.
+                            </p>
+                            
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6 class="text-success">✅ What's Working:</h6>
+                                    <ul class="list-unstyled ms-3">
+                                        <li><i class="fas fa-check text-success"></i> Flask web server</li>
+                                        <li><i class="fas fa-check text-success"></i> PostgreSQL database</li>
+                                        <li><i class="fas fa-check text-success"></i> Gemini AI integration</li>
+                                        <li><i class="fas fa-check text-success"></i> Telegram session configured</li>
+                                        <li><i class="fas fa-check text-success"></i> Health check endpoints</li>
+                                        <li><i class="fas fa-check text-success"></i> Web dashboard</li>
+                                    </ul>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6 class="text-info">🚀 Ready for:</h6>
+                                    <ul class="list-unstyled ms-3">
+                                        <li><i class="fas fa-cloud text-info"></i> Render.com deployment</li>
+                                        <li><i class="fas fa-cloud text-info"></i> Railway deployment</li>
+                                        <li><i class="fas fa-cloud text-info"></i> Heroku deployment</li>
+                                        <li><i class="fas fa-cloud text-info"></i> Any web hosting service</li>
+                                        <li><i class="fas fa-bolt text-warning"></i> 24/7 operation</li>
+                                        <li><i class="fas fa-shield-alt text-success"></i> Production ready</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Features Grid -->
+        <div class="row mb-4">
+            <div class="col-12 mb-3">
+                <h3 class="text-center">
+                    <i class="fas fa-star text-warning"></i>
+                    Features & Capabilities
+                </h3>
+            </div>
+        </div>
+
+        <div class="row g-4 mb-5">
+            <!-- AI Chat -->
+            <div class="col-md-6 col-lg-4">
+                <div class="card feature-card h-100">
+                    <div class="card-body text-center">
+                        <i class="fas fa-comments fa-3x text-primary mb-3"></i>
+                        <h5 class="card-title">Smart Conversations</h5>
+                        <p class="card-text">Natural AI responses with full context awareness and memory</p>
+                        <small class="text-success">
+                            <i class="fas fa-check-circle"></i>
+                            .ask command
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Web Search -->
+            <div class="col-md-6 col-lg-4">
+                <div class="card feature-card h-100">
+                    <div class="card-body text-center">
+                        <i class="fas fa-search fa-3x text-info mb-3"></i>
+                        <h5 class="card-title">Real-time Search</h5>
+                        <p class="card-text">Current information, lyrics, news, and trending content</p>
+                        <small class="text-success">
+                            <i class="fas fa-check-circle"></i>
+                            Auto-detection
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Content Tools -->
+            <div class="col-md-6 col-lg-4">
+                <div class="card feature-card h-100">
+                    <div class="card-body text-center">
+                        <i class="fas fa-edit fa-3x text-warning mb-3"></i>
+                        <h5 class="card-title">Content Creation</h5>
+                        <p class="card-text">Summarize, translate, rewrite, improve, and expand text</p>
+                        <small class="text-success">
+                            <i class="fas fa-check-circle"></i>
+                            Multiple commands
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Voice & Image -->
+            <div class="col-md-6 col-lg-4">
+                <div class="card feature-card h-100">
+                    <div class="card-body text-center">
+                        <i class="fas fa-microphone fa-3x text-success mb-3"></i>
+                        <h5 class="card-title">Media Analysis</h5>
+                        <p class="card-text">Voice transcription and intelligent image analysis with OCR</p>
+                        <small class="text-success">
+                            <i class="fas fa-check-circle"></i>
+                            Auto-processing
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Memory -->
+            <div class="col-md-6 col-lg-4">
+                <div class="card feature-card h-100">
+                    <div class="card-body text-center">
+                        <i class="fas fa-brain fa-3x text-danger mb-3"></i>
+                        <h5 class="card-title">Complete Memory</h5>
+                        <p class="card-text">Persistent chat history with searchable conversation context</p>
+                        <small class="text-success">
+                            <i class="fas fa-check-circle"></i>
+                            .search command
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Roleplay -->
+            <div class="col-md-6 col-lg-4">
+                <div class="card feature-card h-100">
+                    <div class="card-body text-center">
+                        <i class="fas fa-theater-masks fa-3x text-secondary mb-3"></i>
+                        <h5 class="card-title">Roleplay Mode</h5>
+                        <p class="card-text">Interactive character conversations and context switching</p>
+                        <small class="text-success">
+                            <i class="fas fa-check-circle"></i>
+                            .roleplay command
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="row">
+            <div class="col-12 text-center">
+                <div class="card">
+                    <div class="card-body">
+                        <h6 class="card-title">
+                            <i class="fas fa-rocket text-primary"></i>
+                            Powered by Envologia
+                        </h6>
+                        <p class="card-text text-muted mb-2">
+                            Advanced AI userbot running as a web service
+                        </p>
+                        <div class="d-flex justify-content-center gap-3">
+                            <small class="text-success">
+                                <i class="fas fa-shield-alt"></i>
+                                Secure
+                            </small>
+                            <small class="text-info">
+                                <i class="fas fa-cloud"></i>
+                                Web Service
+                            </small>
+                            <small class="text-warning">
+                                <i class="fas fa-bolt"></i>
+                                Real-time
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let statusCheckInterval;
+
+        function updateStatus(data) {
+            try {
+                const indicator = document.getElementById('status-indicator');
+                const statusText = document.getElementById('status-text');
+                const statusMessage = document.getElementById('status-message');
+                const lastUpdated = document.getElementById('last-updated');
+
+                if (!indicator || !statusText || !statusMessage || !lastUpdated) {
+                    console.error('Required elements not found');
+                    return;
+                }
+
+                // Remove all status classes safely
+                indicator.className = indicator.className.replace(/status-\w+/g, '').replace(/pulse/g, '').trim();
+                indicator.classList.add('status-indicator');
+
+                if (data.status === 'running') {
+                    indicator.classList.add('status-running');
+                    statusText.textContent = 'Userbot Active';
+                    statusText.className = 'fw-bold text-success';
+                } else if (data.status === 'ready') {
+                    indicator.classList.add('status-ready');
+                    statusText.textContent = 'Ready for Deployment';
+                    statusText.className = 'fw-bold text-success';
+                } else if (data.status === 'missing_credentials') {
+                    indicator.classList.add('status-missing', 'pulse');
+                    statusText.textContent = 'Missing Credentials';
+                    statusText.className = 'fw-bold text-warning';
+                } else {
+                    indicator.classList.add('status-error', 'pulse');
+                    statusText.textContent = data.error || 'Unknown Status';
+                    statusText.className = 'fw-bold text-danger';
+                }
+
+                // Update message
+                statusMessage.textContent = data.message || '';
+                lastUpdated.textContent = 'Last updated: ' + new Date().toLocaleTimeString();
+            } catch (error) {
+                console.error('Error updating status:', error);
+            }
+        }
+
+        function checkStatus() {
+            fetch('/status')
+                .then(function(response) {
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status);
+                    }
+                    return response.json();
+                })
+                .then(function(data) {
+                    updateStatus(data);
+                })
+                .catch(function(error) {
+                    console.error('Failed to check status:', error);
+                    updateStatus({
+                        status: 'error',
+                        error: 'Connection failed'
+                    });
+                });
+        }
+
+        function refreshStatus() {
+            checkStatus();
+        }
+
+        function startUserbot() {
+            const startBtn = document.getElementById('start-btn');
+            const originalText = startBtn.innerHTML;
+            
+            // Show loading state
+            startBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Starting...';
+            startBtn.disabled = true;
+            
+            fetch('/start_userbot', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(function(response) {
+                return response.json();
+            })
+            .then(function(data) {
+                if (data.status === 'started') {
+                    startBtn.innerHTML = '<i class="fas fa-check"></i> Started!';
+                    startBtn.className = 'btn btn-success';
+                    
+                    // Update status message
+                    const statusMessage = document.getElementById('status-message');
+                    statusMessage.textContent = data.message;
+                    
+                    // Refresh status after a moment
+                    setTimeout(function() {
+                        checkStatus();
+                        startBtn.innerHTML = originalText;
+                        startBtn.disabled = false;
+                    }, 2000);
+                } else if (data.status === 'already_running') {
+                    startBtn.innerHTML = '<i class="fas fa-check"></i> Already Running';
+                    startBtn.className = 'btn btn-info';
+                    setTimeout(function() {
+                        startBtn.innerHTML = originalText;
+                        startBtn.className = 'btn btn-success';
+                        startBtn.disabled = false;
+                    }, 2000);
+                } else {
+                    startBtn.innerHTML = '<i class="fas fa-exclamation"></i> Error';
+                    startBtn.className = 'btn btn-danger';
+                    alert('Error: ' + (data.error || 'Unknown error'));
+                    setTimeout(function() {
+                        startBtn.innerHTML = originalText;
+                        startBtn.className = 'btn btn-success';
+                        startBtn.disabled = false;
+                    }, 2000);
+                }
+            })
+            .catch(function(error) {
+                console.error('Error starting userbot:', error);
+                startBtn.innerHTML = '<i class="fas fa-exclamation"></i> Failed';
+                startBtn.className = 'btn btn-danger';
+                setTimeout(function() {
+                    startBtn.innerHTML = originalText;
+                    startBtn.className = 'btn btn-success';
+                    startBtn.disabled = false;
+                }, 2000);
+            });
+        }
+
+        function startStatusMonitoring() {
+            // Check status immediately
+            checkStatus();
+            
+            // Then check every 30 seconds
+            if (statusCheckInterval) {
+                clearInterval(statusCheckInterval);
+            }
+            statusCheckInterval = setInterval(checkStatus, 30000);
+        }
+
+        // Start monitoring when page loads
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', startStatusMonitoring);
+        } else {
+            startStatusMonitoring();
+        }
+
+        // Clean up interval when page unloads
+        window.addEventListener('beforeunload', function() {
+            if (statusCheckInterval) {
+                clearInterval(statusCheckInterval);
+            }
+        });
+    </script>
+</body>
+</html>
